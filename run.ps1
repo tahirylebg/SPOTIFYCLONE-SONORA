@@ -1,4 +1,17 @@
+param(
+    # backend : l'API Spring Boot | web : le site React | desktop : l'appli JavaFX
+    [ValidateSet("backend", "web", "desktop")]
+    [string]$App = "desktop"
+)
+
 $ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
 
-& mvn -f "spotify-clone/pom.xml" javafx:run
-
+switch ($App) {
+    "backend" { & mvn -f "backend/pom.xml" spring-boot:run }
+    "web" {
+        if (-not (Test-Path "web/node_modules")) { & npm --prefix web install }
+        & npm --prefix web run dev
+    }
+    "desktop" { & mvn -f "desktop/pom.xml" javafx:run }
+}

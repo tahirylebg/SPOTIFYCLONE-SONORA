@@ -24,10 +24,11 @@ public class LibraryService {
 
     public static final String ARTISTE_INCONNU = "Artiste inconnu";
 
-    // Selon le dossier de lancement (spotify-clone/ via Maven, ou la racine du dépôt).
+    // Dossier music/ partagé avec le backend, à la racine du dépôt.
+    // Selon le dossier de lancement : desktop/ (via Maven) ou la racine du dépôt.
     private static final List<Path> DOSSIERS_CANDIDATS = List.of(
-            Path.of("src/main/resources/music"),
-            Path.of("spotify-clone/src/main/resources/music"));
+            Path.of("../music"),
+            Path.of("music"));
 
     private static final Locale FR = Locale.FRENCH;
 

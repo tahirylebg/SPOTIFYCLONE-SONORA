@@ -3,3 +3,7 @@ target/
 .idea/
 *.iml
 .vscode/
+node_modules/
+dist/
+*.tsbuildinfo
+.env.local

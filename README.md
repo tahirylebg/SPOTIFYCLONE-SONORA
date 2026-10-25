@@ -1,59 +1,74 @@
-# JavaTP3 - Spotify Clone
+# Sonora
 
-Application de lecteur musical en JavaFX, construite avec Maven.
+Lecteur de musique façon Spotify, découpé en un **backend** (API REST) et des **clients** qui l'utilisent.
 
-## Fonctionnalites
+```
+backend/   API REST Spring Boot : bibliothèque, métadonnées, streaming audio, pochettes, historique
+web/       Site React + Vite + TypeScript (bureau et mobile)
+desktop/   Appli de bureau JavaFX d'origine (autonome, lit directement les fichiers)
+music/     Fichiers .mp3 / .wav, partagés par le backend et l'appli desktop
+```
 
-- Chargement automatique des fichiers audio `mp3` et `wav`
-- Vraies durees et pochettes lues dans les fichiers (tags ID3)
-- Artiste et titre deduits du nom de fichier (`Artiste - Titre.mp3`)
-- Recherche par titre ou artiste (insensible aux accents)
-- Lecture, pause, piste suivante et precedente (au-dela de 3 s, "precedent" revient au debut)
-- Modes shuffle et repetition (tout / un seul)
-- Barre de progression cliquable, volume et mute
-- Morceau en cours mis en evidence dans la liste
+L'appli mobile (React Native / Expo) viendra dans `mobile/` et réutilisera l'API et le client
+TypeScript de `web/src/api/`.
 
-## Pre-requis
+## Prérequis
 
-- Java 17
-- Maven
+- Java 17 ou plus récent et Maven
+- Node.js 20 ou plus récent (pour le site)
 
 ## Lancer le projet
 
-Depuis la racine du depot :
+Dans deux terminaux, depuis la racine du dépôt :
 
 ```powershell
-.\run.ps1
+.\run.ps1 backend   # API sur http://localhost:8080
+.\run.ps1 web       # site sur http://localhost:5173
 ```
 
-Ou, si tu utilises l'invite de commandes Windows :
+En dev, le site relaie `/api` vers le backend (voir `web/vite.config.ts`) : rien à configurer.
+L'appli JavaFX se lance toujours avec `.\run.ps1 desktop`.
 
-```cmd
-run.cmd
-```
+> **Erreur Maven `PKIX path building failed` ?** Un antivirus ou un proxy intercepte le HTTPS.
+> Indique à Java d'utiliser les certificats de Windows avant de lancer Maven :
+> `$env:MAVEN_OPTS = "-Djavax.net.ssl.trustStoreType=Windows-ROOT"`
 
-Ces scripts lancent :
+## API
 
-```powershell
-mvn -f spotify-clone/pom.xml javafx:run
-```
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/api/tracks` | Tous les morceaux |
+| GET | `/api/tracks/{id}` | Un morceau |
+| GET | `/api/tracks/{id}/audio` | Fichier audio (supporte `Range`, pour avancer dans le morceau) |
+| GET | `/api/tracks/{id}/cover` | Pochette JPEG carrée, bandes noires retirées |
+| GET | `/api/artists` | Artistes, avec leurs morceaux |
+| GET | `/api/search?q=` | Recherche titres + artistes, insensible aux accents |
+| GET | `/api/plays` | Historique d'écoute, du plus récent au plus ancien |
+| POST | `/api/plays/{trackId}` | Enregistre une écoute |
+| DELETE | `/api/plays` | Vide l'historique |
+| POST | `/api/library/rescan` | Relit le dossier `music/` |
 
-## Utilisation
+Réglages dans `backend/src/main/resources/application.properties` :
+`sonora.music-dir` (dossier musique), `sonora.data-dir` (historique, `~/.sonora` par défaut)
+et `sonora.cors-origins` (origines autorisées à appeler l'API depuis un navigateur).
 
-- **Double-clic** ou **Entree** sur un titre pour le lancer
-- `Espace` : lecture / pause
-- `Ctrl + ->` / `Ctrl + <-` : piste suivante / precedente
-- `Ctrl + F` : rechercher, `Echap` : vider la recherche
+Tests : `mvn -f backend/pom.xml test`
 
-## Structure
+## Le site
 
-- `spotify-clone/pom.xml` : configuration Maven et JavaFX
-- `spotify-clone/src/main/java` : code source Java
-- `spotify-clone/src/main/resources/music` : fichiers audio detectes au lancement
-- `spotify-clone/src/main/resources/styles/app.css` : styles de l'interface
+- **Accueil** : accès rapide, écoutés récemment, tes artistes, tes plus écoutés
+- **Rechercher** : grand champ de recherche, tuiles pour parcourir les artistes, meilleur résultat
+- **Bibliothèque** : vues Titres (avec tri) et Artistes
+- **Découvertes** : mix aléatoire, titres jamais écoutés, sélection au hasard
+- Lecteur : aléatoire, répétition (tout / un seul), barre de progression, volume, commandes système
+  (touches multimédia, écran de verrouillage)
+- Raccourcis : `Espace` lecture/pause, `Ctrl + ←/→` piste précédente/suivante, `Ctrl + K` ou `/` recherche
+- Sous 760 px de large, la sidebar laisse la place à une barre de navigation en bas
 
-## Notes
+Pour viser un backend déployé ailleurs : `VITE_API_URL=https://mon-api.exemple.com npm run build`.
 
-- L'application lit les morceaux presents dans `spotify-clone/src/main/resources/music`.
-- Nomme tes fichiers `Artiste - Titre.mp3`. Les mentions du type `(Visualizer)`, `CLIP OFFICIEL` ou une annee sont retirees du titre. Si le nom ne contient pas ` - `, ce sont les tags ID3 qui sont utilises.
-- Si Maven ou Java ne sont pas reconnus, verifie qu'ils sont bien disponibles dans le `PATH`.
+## Nommer ses fichiers
+
+Nomme tes fichiers `Artiste - Titre.mp3`. Les mentions du type `(Visualizer)`, `CLIP OFFICIEL`
+ou une année sont retirées du titre. Si le nom ne contient pas ` - `, ce sont les tags ID3 qui
+sont utilisés. Après avoir ajouté des fichiers, relance le backend ou appelle `POST /api/library/rescan`.

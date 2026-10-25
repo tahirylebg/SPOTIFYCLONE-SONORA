@@ -1,4 +1,4 @@
 @echo off
 setlocal
-mvn -f spotify-clone/pom.xml javafx:run
-
+rem Usage : run.cmd [backend|web|desktop]   (desktop par défaut)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run.ps1" %*
