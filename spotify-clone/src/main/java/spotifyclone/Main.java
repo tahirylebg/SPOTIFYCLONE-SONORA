@@ -12,12 +12,15 @@ public class Main extends Application {
     public void start(Stage stage) {
         MainView mainView = new MainView();
         MainController controller = new MainController(mainView);
-        Scene scene = new Scene(mainView, 800, 600);
+        Scene scene = new Scene(mainView, 1200, 760);
         var css = getClass().getResource("/styles/app.css");
         if (css != null) {
             scene.getStylesheets().add(css.toExternalForm());
         }
-        stage.setTitle("Spotify Clone");
+        controller.installerRaccourcis(scene);
+        stage.setTitle("Sonora");
+        stage.setMinWidth(900);
+        stage.setMinHeight(600);
         stage.setScene(scene);
         stage.show();
     }

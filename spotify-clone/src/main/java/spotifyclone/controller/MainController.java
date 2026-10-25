@@ -1,230 +1,141 @@
 package spotifyclone.controller;
 
 import java.nio.file.Path;
+import java.util.List;
 
-import javafx.application.Platform;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
-import javafx.scene.media.MediaPlayer;
-import javafx.util.Duration;
+import javafx.collections.ListChangeListener;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.TextInputControl;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import spotifyclone.model.AppState;
 import spotifyclone.model.Track;
-import spotifyclone.service.AudioPlayerService;
+import spotifyclone.service.HistoryService;
 import spotifyclone.service.LibraryService;
-import spotifyclone.service.PlaybackQueue;
-import spotifyclone.service.PlaybackQueue.RepeatMode;
+import spotifyclone.ui.Actions;
 import spotifyclone.ui.MainView;
+import spotifyclone.ui.Sidebar;
+import spotifyclone.ui.pages.DiscoverPage;
+import spotifyclone.ui.pages.HomePage;
+import spotifyclone.ui.pages.LibraryPage;
+import spotifyclone.ui.pages.Page;
+import spotifyclone.ui.pages.SearchPage;
 
+/** Charge la bibliothèque, relie les pages entre elles et gère la navigation. */
 public class MainController {
-    private MainView mainView;
-    private LibraryService libraryService;
-    private ObservableList<Track> trackObservableList;
-    private final AudioPlayerService audioPlayerService = new AudioPlayerService();
-    private PlaybackQueue playbackQueue;
-    private boolean userIsSeeking = false;
 
-    public MainController(MainView mainView){
+    private final MainView mainView;
+    private final Sidebar sidebar;
+    private final AppState state = new AppState();
+    private final LibraryService libraryService = new LibraryService();
+    private final HistoryService historyService = new HistoryService();
+    private final PlayerController player;
+    private final HomePage homePage;
+    private final SearchPage searchPage;
+    private final LibraryPage libraryPage;
+    private final DiscoverPage discoverPage;
+    private Page pageCourante;
+
+    public MainController(MainView mainView) {
         this.mainView = mainView;
-        this.libraryService = new LibraryService();
-        this.trackObservableList = FXCollections.observableArrayList();
-        mainView.getTrackList().setItems(trackObservableList);
+        this.sidebar = mainView.getSidebar();
+        this.player = new PlayerController(mainView.getPlayerBar(), state);
+
+        Actions actions = new Actions() {
+            @Override
+            public void jouer(Track track, List<Track> contexte) {
+                player.jouer(track, contexte);
+            }
+
+            @Override
+            public void jouerAleatoire(List<Track> tracks) {
+                player.jouerAleatoire(tracks);
+            }
+
+            @Override
+            public void ouvrirArtiste(String artiste) {
+                ouvrirRecherche(artiste);
+            }
+        };
+        homePage = new HomePage(state, actions);
+        searchPage = new SearchPage(state, actions);
+        libraryPage = new LibraryPage(state, actions);
+        discoverPage = new DiscoverPage(state, actions);
+
         chargerBibliotheque();
-        initialiserInteractions();
+        initialiserNavigation();
+        naviguer(homePage, sidebar.getHomeButton());
     }
 
-    private void chargerBibliotheque(){
-        Path dossier = Path.of("src/main/resources/music");
-        trackObservableList.setAll(libraryService.chargerBibliotheque(dossier));
-        playbackQueue = new PlaybackQueue(trackObservableList);
-    }
+    private void chargerBibliotheque() {
+        Path dossier = libraryService.trouverDossierMusique();
+        state.setDossierMusique(dossier);
+        state.getTracks().setAll(libraryService.chargerBibliotheque(dossier));
+        state.chargerEcoutes(historyService.charger());
 
-    private void initialiserInteractions() {
-        mainView.getTrackList().getSelectionModel().selectedIndexProperty().addListener((obs, oldIndex, newIndex) -> {
-            if (newIndex == null) {
-                return;
-            }
-            int idx = newIndex.intValue();
-            if (idx < 0 || idx >= trackObservableList.size()) {
-                return;
-            }
-            playbackQueue.setIndexCourant(idx);
-            playTrack(trackObservableList.get(idx));
-        });
-
-        mainView.getPlayerBar().getPlayPauseButton().setOnAction(e -> togglePlayPause());
-        mainView.getPlayerBar().getNextButton().setOnAction(e -> playNext());
-        mainView.getPlayerBar().getPreviousButton().setOnAction(e -> playPrevious());
-        mainView.getPlayerBar().getShuffleButton().setOnAction(e -> {
-            if (playbackQueue == null) {
-                return;
-            }
-            playbackQueue.toggleShuffle();
-            updateShuffleStyle();
-        });
-        updateShuffleStyle();
-
-        mainView.getPlayerBar().getRepeatButton().setOnAction(e -> {
-            if (playbackQueue == null) {
-                return;
-            }
-            playbackQueue.toggleRepeat();
-            updateRepeatUi();
-        });
-        updateRepeatUi();
-
-        mainView.getPlayerBar().getVolumeSlider().valueProperty().addListener((obs, oldV, newV) -> {
-            MediaPlayer mp = audioPlayerService.getMediaPlayer();
-            if (mp != null && newV != null) {
-                mp.setVolume(newV.doubleValue());
+        // Chaque écoute : on sauvegarde, et l'accueil / la sidebar se mettent à jour.
+        state.getHistorique().addListener((ListChangeListener<Track>) c -> {
+            historyService.sauvegarder(state.getToutesEcoutes());
+            majRecents();
+            if (pageCourante != null && pageCourante != searchPage) {
+                pageCourante.rafraichirSurPlace();
             }
         });
+        majRecents();
 
-        mainView.getPlayerBar().getProgressSlider().setOnMousePressed(e -> userIsSeeking = true);
-        mainView.getPlayerBar().getProgressSlider().setOnMouseReleased(e -> {
-            userIsSeeking = false;
-            MediaPlayer mp = audioPlayerService.getMediaPlayer();
-            if (mp == null) {
-                return;
+        // Les tags ID3 peuvent changer les artistes : on reconstruit la page une fois l'analyse finie.
+        libraryService.chargerMetadonnees(state.getTracks(), () -> {
+            if (pageCourante != null) {
+                pageCourante.rafraichirSurPlace();
             }
-            double value = mainView.getPlayerBar().getProgressSlider().getValue();
-            Duration total = mp.getTotalDuration();
-            if (total == null || total.isUnknown() || total.isIndefinite() || total.toMillis() <= 0) {
-                return;
-            }
-            mp.seek(total.multiply(value));
         });
     }
 
-    private void updateShuffleStyle() {
-        boolean actif = playbackQueue != null && playbackQueue.isShuffleActif();
-        String base = "-fx-background-color: transparent;";
-        String active = "-fx-background-color: #1DB954; -fx-text-fill: #000000;";
-        mainView.getPlayerBar().getShuffleButton().setStyle(actif ? active : base);
+    private void majRecents() {
+        sidebar.afficherRecents(state.getHistorique(), track -> player.jouer(track, state.getHistorique()));
     }
 
-    private void updateRepeatUi() {
-        RepeatMode mode = playbackQueue == null ? RepeatMode.NONE : playbackQueue.getRepeatMode();
-        var button = mainView.getPlayerBar().getRepeatButton();
-
-        String baseStyle = "-fx-background-color: transparent;";
-        String activeStyle = "-fx-background-color: #1DB954; -fx-text-fill: #000000;";
-
-        if (mode == RepeatMode.ONE) {
-            button.setText("🔂");
-            button.setStyle(activeStyle);
-        } else if (mode == RepeatMode.ALL) {
-            button.setText("🔁");
-            button.setStyle(activeStyle);
-        } else {
-            button.setText("🔁");
-            button.setStyle(baseStyle);
-        }
-    }
-
-    private void togglePlayPause() {
-        MediaPlayer mp = audioPlayerService.getMediaPlayer();
-        if (mp == null) {
-            Track selected = mainView.getTrackList().getSelectionModel().getSelectedItem();
-            if (selected == null && !trackObservableList.isEmpty()) {
-                mainView.getTrackList().getSelectionModel().select(0);
-                selected = trackObservableList.get(0);
-            }
-            playTrack(selected);
-            return;
-        }
-
-        MediaPlayer.Status status = mp.getStatus();
-        if (status == MediaPlayer.Status.PLAYING) {
-            audioPlayerService.pause();
-            mainView.getPlayerBar().getPlayPauseButton().setText("▶");
-        } else {
-            mp.play();
-            mainView.getPlayerBar().getPlayPauseButton().setText("❚❚");
-        }
-    }
-
-    private void playNext() {
-        if (playbackQueue == null) {
-            return;
-        }
-        Track next = playbackQueue.next();
-        if (next == null) {
-            return;
-        }
-        mainView.getTrackList().getSelectionModel().select(trackObservableList.indexOf(next));
-        playTrack(next);
-    }
-
-    private void playPrevious() {
-        if (playbackQueue == null) {
-            return;
-        }
-        Track previous = playbackQueue.previous();
-        if (previous == null) {
-            return;
-        }
-        mainView.getTrackList().getSelectionModel().select(trackObservableList.indexOf(previous));
-        playTrack(previous);
-    }
-
-    private void playTrack(Track track) {
-        if (track == null) {
-            return;
-        }
-
-        mainView.getPlayerBar().getTrackLabel().setText(track.getTitre());
-        mainView.getPlayerBar().getPlayPauseButton().setText("❚❚");
-        mainView.getPlayerBar().getProgressSlider().setValue(0);
-        mainView.getPlayerBar().getTimeLabel().setText("0:00 / " + formatDuration(track.getDuree()));
-
-        audioPlayerService.play(track);
-        MediaPlayer mp = audioPlayerService.getMediaPlayer();
-        if (mp == null) {
-            return;
-        }
-
-        mp.setVolume(mainView.getPlayerBar().getVolumeSlider().getValue());
-
-        mp.setOnReady(() -> Platform.runLater(() -> {
-            Duration total = mp.getTotalDuration();
-            String totalText = formatDuration(total);
-            if (totalText.isBlank()) {
-                totalText = formatDuration(track.getDuree());
-            }
-            mainView.getPlayerBar().getTimeLabel().setText("0:00 / " + (totalText.isBlank() ? "0:00" : totalText));
-        }));
-
-        mp.currentTimeProperty().addListener((obs, oldT, newT) -> {
-            if (newT == null) {
-                return;
-            }
-            Platform.runLater(() -> updateProgressAndTime(mp, newT));
+    private void initialiserNavigation() {
+        sidebar.getHomeButton().setOnAction(e -> naviguer(homePage, sidebar.getHomeButton()));
+        sidebar.getSearchButton().setOnAction(e -> {
+            naviguer(searchPage, sidebar.getSearchButton());
+            searchPage.focusChamp();
         });
-
-        mp.setOnEndOfMedia(() -> Platform.runLater(this::playNext));
+        sidebar.getLibraryButton().setOnAction(e -> naviguer(libraryPage, sidebar.getLibraryButton()));
+        sidebar.getDiscoverButton().setOnAction(e -> naviguer(discoverPage, sidebar.getDiscoverButton()));
     }
 
-    private void updateProgressAndTime(MediaPlayer mp, Duration current) {
-        Duration total = mp.getTotalDuration();
-        if (total == null || total.isUnknown() || total.isIndefinite() || total.toMillis() <= 0) {
-            mainView.getPlayerBar().getTimeLabel().setText(formatDuration(current) + " / 0:00");
-            return;
-        }
-
-        if (!userIsSeeking) {
-            double progress = Math.max(0, Math.min(1, current.toMillis() / total.toMillis()));
-            mainView.getPlayerBar().getProgressSlider().setValue(progress);
-        }
-
-        mainView.getPlayerBar().getTimeLabel().setText(formatDuration(current) + " / " + formatDuration(total));
+    private void naviguer(Page page, Button itemSidebar) {
+        sidebar.activer(itemSidebar);
+        pageCourante = page;
+        page.rafraichir();
+        page.setVvalue(0);
+        mainView.afficherPage(page);
     }
 
-    private static String formatDuration(Duration duration) {
-        if (duration == null || duration.isUnknown() || duration.isIndefinite()) {
-            return "";
+    private void ouvrirRecherche(String requete) {
+        if (pageCourante != searchPage) {
+            naviguer(searchPage, sidebar.getSearchButton());
         }
-        int totalSeconds = (int) Math.max(0, Math.floor(duration.toSeconds()));
-        int minutes = totalSeconds / 60;
-        int seconds = totalSeconds % 60;
-        return String.format("%d:%02d", minutes, seconds);
+        searchPage.rechercher(requete);
+    }
+
+    /** Raccourcis : ceux du lecteur, plus Ctrl+F (recherche) et Échap (vider la recherche). */
+    public void installerRaccourcis(Scene scene) {
+        player.installerRaccourcis(scene);
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isShortcutDown() && e.getCode() == KeyCode.F) {
+                if (pageCourante != searchPage) {
+                    naviguer(searchPage, sidebar.getSearchButton());
+                }
+                searchPage.focusChamp();
+                e.consume();
+            } else if (e.getCode() == KeyCode.ESCAPE && scene.getFocusOwner() instanceof TextInputControl) {
+                searchPage.vider();
+                mainView.requestFocus();
+                e.consume();
+            }
+        });
     }
 }

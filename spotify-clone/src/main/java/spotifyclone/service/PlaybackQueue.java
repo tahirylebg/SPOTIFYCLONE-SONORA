@@ -6,96 +6,92 @@ import java.util.List;
 
 import spotifyclone.model.Track;
 
+/**
+ * File de lecture. Elle travaille sur sa propre copie du contexte (la liste d'où
+ * l'on a lancé la lecture) : le shuffle ne modifie jamais l'ordre affiché.
+ */
 public class PlaybackQueue {
 
     public enum RepeatMode {
         NONE, ONE, ALL
     }
 
-    private List<Track> tracks;
-    private List<Track> tracksOriginales;
+    private List<Track> ordreOriginal = new ArrayList<>();
+    private List<Track> file = new ArrayList<>();
+    private int indexCourant = -1;
     private boolean shuffleActif;
     private RepeatMode repeatMode = RepeatMode.NONE;
-    private int indexCourant;
 
-    public PlaybackQueue(List<Track> tracks) {
-        this.tracks = tracks;
-        this.tracksOriginales = null;
-        this.shuffleActif = false;
-        this.repeatMode = RepeatMode.NONE;
-        this.indexCourant = 0;
+    /** Démarre une nouvelle file à partir d'un contexte, en commençant par {@code depart}. */
+    public void demarrer(List<Track> contexte, Track depart) {
+        ordreOriginal = new ArrayList<>(contexte);
+        if (!ordreOriginal.contains(depart)) {
+            ordreOriginal.add(0, depart);
+        }
+        file = new ArrayList<>(ordreOriginal);
+        if (shuffleActif) {
+            Collections.shuffle(file);
+            placerEnTete(depart);
+        }
+        indexCourant = file.indexOf(depart);
     }
 
     public Track getCourant() {
-        if (tracks == null || tracks.isEmpty()) {
-            return null;
-        }
-        indexCourant = Math.max(0, Math.min(indexCourant, tracks.size() - 1));
-        return tracks.get(indexCourant);
+        return indexCourant >= 0 && indexCourant < file.size() ? file.get(indexCourant) : null;
     }
 
+    /** Piste suivante demandée par l'utilisateur ; null en fin de file sans repeat. */
     public Track next() {
-        if (tracks == null || tracks.isEmpty()) {
+        if (file.isEmpty()) {
             return null;
         }
-
-        if (repeatMode == RepeatMode.ONE) {
-            return getCourant();
-        }
-
-        if (repeatMode == RepeatMode.ALL) {
-            indexCourant = (indexCourant + 1) % tracks.size();
-            return getCourant();
-        }
-
-        if (indexCourant < tracks.size() - 1) {
+        if (indexCourant < file.size() - 1) {
             indexCourant++;
+        } else if (repeatMode != RepeatMode.NONE) {
+            indexCourant = 0;
+        } else {
+            return null;
         }
         return getCourant();
     }
 
+    /** Piste à enchaîner quand le morceau courant se termine. */
+    public Track nextAuto() {
+        if (repeatMode == RepeatMode.ONE) {
+            return getCourant();
+        }
+        return next();
+    }
+
     public Track previous() {
-        if (tracks == null || tracks.isEmpty()) {
+        if (file.isEmpty()) {
             return null;
         }
         if (indexCourant > 0) {
             indexCourant--;
+        } else if (repeatMode == RepeatMode.ALL) {
+            indexCourant = file.size() - 1;
+        } else {
+            indexCourant = 0;
         }
         return getCourant();
     }
 
-    public void setIndexCourant(int index) {
-        if (tracks == null || tracks.isEmpty()) {
-            indexCourant = 0;
-            return;
-        }
-        indexCourant = Math.max(0, Math.min(index, tracks.size() - 1));
-    }
-
     public void toggleShuffle() {
-        if (tracks == null || tracks.isEmpty()) {
-            shuffleActif = !shuffleActif;
-            return;
-        }
-
         Track courant = getCourant();
         shuffleActif = !shuffleActif;
-
+        file = new ArrayList<>(ordreOriginal);
         if (shuffleActif) {
-            tracksOriginales = new ArrayList<>(tracks);
-            Collections.shuffle(tracks);
-        } else {
-            if (tracksOriginales != null) {
-                tracks = new ArrayList<>(tracksOriginales);
-                tracksOriginales = null;
-            }
+            Collections.shuffle(file);
+            placerEnTete(courant);
         }
+        indexCourant = courant == null ? -1 : file.indexOf(courant);
+    }
 
-        if (courant != null && tracks != null) {
-            int idx = tracks.indexOf(courant);
-            if (idx >= 0) {
-                indexCourant = idx;
-            }
+    // Le morceau en cours passe en tête pour ne pas rejouer ce qui précède.
+    private void placerEnTete(Track track) {
+        if (track != null && file.remove(track)) {
+            file.add(0, track);
         }
     }
 
@@ -105,9 +101,9 @@ public class PlaybackQueue {
 
     public void toggleRepeat() {
         switch (repeatMode) {
-            case NONE -> repeatMode = RepeatMode.ONE;
-            case ONE -> repeatMode = RepeatMode.ALL;
-            case ALL -> repeatMode = RepeatMode.NONE;
+            case NONE -> repeatMode = RepeatMode.ALL;
+            case ALL -> repeatMode = RepeatMode.ONE;
+            case ONE -> repeatMode = RepeatMode.NONE;
         }
     }
 

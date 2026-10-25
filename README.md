@@ -5,11 +5,13 @@ Application de lecteur musical en JavaFX, construite avec Maven.
 ## Fonctionnalites
 
 - Chargement automatique des fichiers audio `mp3` et `wav`
-- Affichage de la bibliotheque musicale locale
-- Lecture, pause, piste suivante et precedente
-- Modes shuffle et repetition
-- Barre de progression et controle du volume
-- Styles visuels via CSS
+- Vraies durees et pochettes lues dans les fichiers (tags ID3)
+- Artiste et titre deduits du nom de fichier (`Artiste - Titre.mp3`)
+- Recherche par titre ou artiste (insensible aux accents)
+- Lecture, pause, piste suivante et precedente (au-dela de 3 s, "precedent" revient au debut)
+- Modes shuffle et repetition (tout / un seul)
+- Barre de progression cliquable, volume et mute
+- Morceau en cours mis en evidence dans la liste
 
 ## Pre-requis
 
@@ -36,6 +38,13 @@ Ces scripts lancent :
 mvn -f spotify-clone/pom.xml javafx:run
 ```
 
+## Utilisation
+
+- **Double-clic** ou **Entree** sur un titre pour le lancer
+- `Espace` : lecture / pause
+- `Ctrl + ->` / `Ctrl + <-` : piste suivante / precedente
+- `Ctrl + F` : rechercher, `Echap` : vider la recherche
+
 ## Structure
 
 - `spotify-clone/pom.xml` : configuration Maven et JavaFX
@@ -46,5 +55,5 @@ mvn -f spotify-clone/pom.xml javafx:run
 ## Notes
 
 - L'application lit les morceaux presents dans `spotify-clone/src/main/resources/music`.
-- Les metadonnees audio sont simplifiees pour le moment : le titre est deduit du nom du fichier.
+- Nomme tes fichiers `Artiste - Titre.mp3`. Les mentions du type `(Visualizer)`, `CLIP OFFICIEL` ou une annee sont retirees du titre. Si le nom ne contient pas ` - `, ce sont les tags ID3 qui sont utilises.
 - Si Maven ou Java ne sont pas reconnus, verifie qu'ils sont bien disponibles dans le `PATH`.
